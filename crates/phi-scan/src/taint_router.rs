@@ -56,7 +56,7 @@ fn patterns() -> &'static Patterns {
         name: Regex::new(r"(?i)\b(?:patient|name|pt\.?|dr\.?|doctor|nurse|provider|physician|mr\.?|mrs\.?|ms\.?|miss)\s*[:=]\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b").unwrap(),
         geographic: Regex::new(r"(?i)\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Circle|Cir))\b|\b(?:ZIP|zip\s*code|postal|address)\s*[:=]?\s*\d{5}(?:-\d{4})?\b").unwrap(),
         date: Regex::new(r"(?i)\b(?:DOB|date\s+of\s+birth|birth\s+date|admission|discharge|admitted|born)\s*[:=]?\s*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b|\b\d{1,2}[/\-]\d{1,2}[/\-]\d{4}\b").unwrap(),
-        phone: Regex::new(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b").unwrap(),
+        phone: Regex::new(r"\(\d{3}\)\s*\d{3}[-.]\d{4}|\b\d{3}[-.]\d{3}[-.]\d{4}\b").unwrap(),
         fax: Regex::new(r"(?i)\bfax\s*[:=]?\s*(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b").unwrap(),
         email: Regex::new(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b").unwrap(),
         ssn: Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").unwrap(),

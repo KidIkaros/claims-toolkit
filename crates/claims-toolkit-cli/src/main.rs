@@ -20,8 +20,8 @@ struct Cli {
 enum Commands {
     /// Parse an X12 835 ERA file
     Parse {
-        /// ERA/835 file to parse
-        file: PathBuf,
+        /// ERA/835 file to parse (reads stdin if omitted)
+        file: Option<PathBuf>,
 
         #[command(subcommand)]
         output: Option<ParseOutput>,
@@ -111,18 +111,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 // ── Parse Command ─────────────────────────────────────────────
 
-fn cmd_parse(file: &PathBuf, output: Option<ParseOutput>) -> Result<(), Box<dyn std::error::Error>> {
-    let raw = fs::read_to_string(file)
-        .map_err(|e| format!("Cannot read '{}': {}", file.display(), e))?;
+fn cmd_parse(file: &Option<PathBuf>, output: Option<ParseOutput>) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = match file {
+        Some(path) => fs::read_to_string(path)
+            .map_err(|e| format!("Cannot read '{}': {}", path.display(), e))?,
+        None => {
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf)?;
+            buf
+        }
+    };
+
+    let file_label = file.as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "stdin".to_string());
 
     let era = era835::parse_era835(&raw)
-        .map_err(|e| format_parse_error(file, &e))?;
+        .map_err(|e| format_parse_error_label(&file_label, &e))?;
 
     match output {
         Some(ParseOutput::Summary { json }) => {
             if json {
                 let summary = serde_json::json!({
-                    "file": file.display().to_string(),
+                    "file": file_label,
                     "payer": era.payer.name,
                     "payee": era.payee.name,
                     "npi": era.payee.npi,
@@ -370,27 +381,31 @@ fn print_phi_results(text: &str, result: &phi_scan::PhiScanResult, file: Option<
 
 // ── Helpers ──────────────────────────────────────────────────
 
-fn format_parse_error(file: &PathBuf, error: &era835::Era835Error) -> String {
+fn format_parse_error_label(label: &str, error: &era835::Era835Error) -> String {
     match error {
         era835::Era835Error::InvalidFormat(msg) => {
             format!(
                 "Invalid 835 format in '{}':\n  {}\n\nThis file does not appear to be a valid X12 835 ERA file.\nCheck that:\n  - The file uses ~ as segment terminator\n  - The file starts with an ISA segment\n  - The file is not corrupted or truncated",
-                file.display(), msg
+                label, msg
             )
         }
         era835::Era835Error::MissingSegment(seg) => {
             format!(
                 "Missing required segment in '{}':\n  Expected segment '{}' but it was not found.\n\nThe 835 file may be incomplete or from an unsupported format variant.",
-                file.display(), seg
+                label, seg
             )
         }
         era835::Era835Error::SegmentError { segment, detail } => {
             format!(
                 "Error parsing segment '{}' in '{}':\n  {}\n\nThe segment may contain unexpected data or be malformed.",
-                segment, file.display(), detail
+                segment, label, detail
             )
         }
     }
+}
+
+fn format_parse_error(file: &PathBuf, error: &era835::Era835Error) -> String {
+    format_parse_error_label(&file.display().to_string(), error)
 }
 
 fn export_denials_csv(era: &era835::Remittance) {
