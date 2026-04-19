@@ -343,7 +343,7 @@ pub fn generate_synthetic_era835(num_claims: usize, seed: Option<u64>) -> Era835
     let (payer_name, payer_qual, payer_id) = payers[rng.gen_range(0..payers.len())];
     let (payee_name, payee_npi) = practices[rng.gen_range(0..practices.len())];
 
-    let total_payment: f64 = (0..num_claims)
+    let _total_payment: f64 = (0..num_claims)
         .map(|_| rng.gen_range(100.0..2000.0))
         .sum();
 
