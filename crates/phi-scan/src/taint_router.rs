@@ -85,8 +85,38 @@ pub fn scan_phi(text: &str) -> PhiScanResult {
     for m in p.date.find_iter(text) { d.push(PhiDetection { category: PhiCategory::Date, span: (m.start(), m.end()) }); }
     for m in p.phone.find_iter(text) {
         let before = &text[..m.start()];
-        let cat = if before.to_lowercase().ends_with("fax") { PhiCategory::Fax } else { PhiCategory::Phone };
-        d.push(PhiDetection { category: cat, span: (m.start(), m.end()) });
+        let before_lower_owned = before.to_lowercase();
+        let before_lower = before_lower_owned.trim_end();
+
+        // Skip if this is an NPI number (not PHI)
+        if before_lower.ends_with("npi")
+            || before_lower.ends_with("provider")
+            || before_lower.ends_with("national provider")
+            || before_lower.ends_with("provider npi")
+        {
+            continue;
+        }
+
+        // Skip bare 10-digit numbers without phone formatting
+        let matched = &text[m.start()..m.end()];
+        let has_formatting = matched.contains('(')
+            || matched.contains(')')
+            || matched.contains('-')
+            || matched.contains('.')
+            || matched.starts_with('+');
+        if !has_formatting && matched.len() == 10 && matched.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+
+        let cat = if before_lower.ends_with("fax") {
+            PhiCategory::Fax
+        } else {
+            PhiCategory::Phone
+        };
+        d.push(PhiDetection {
+            category: cat,
+            span: (m.start(), m.end()),
+        });
     }
     for m in p.fax.find_iter(text) {
         let span = (m.start(), m.end());

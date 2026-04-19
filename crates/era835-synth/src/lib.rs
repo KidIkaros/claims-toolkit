@@ -353,7 +353,7 @@ pub fn generate_synthetic_era835(num_claims: usize, seed: Option<u64>) -> Era835
     let mut running_payment = 0.0;
 
     for i in 0..num_claims {
-        let claim = generate_synthetic_claim(&mut rng, i, &mut running_payment);
+        let claim = generate_synthetic_claim(&mut rng, i, &mut running_payment, payer_name);
         claims.push(claim);
     }
 
@@ -397,6 +397,7 @@ fn generate_synthetic_claim(
     rng: &mut StdRng,
     index: usize,
     running_payment: &mut f64,
+    payer_name: &str,
 ) -> Era835Claim {
     let cpt_codes = [
         ("99213", 125.0, 250.0),
@@ -423,7 +424,17 @@ fn generate_synthetic_claim(
     let first_names = ["MARY", "JOHN", "ROBERT", "SARAH", "DAVID", "JENNIFER", "MICHAEL", "LISA", "JAMES", "PATRICIA"];
     let last_names = ["SMITH", "JOHNSON", "WILLIAMS", "BROWN", "JONES", "GARCIA", "MILLER", "DAVIS", "RODRIGUEZ", "MARTINEZ"];
 
-    let is_denied = rng.gen_bool(0.12);
+    let denial_rate = match payer_name {
+        "BLUE CROSS BLUE SHIELD" => 0.18,
+        "AETNA LIFE INSURANCE" => 0.15,
+        "UNITED HEALTHCARE" => 0.14,
+        "CIGNA HEALTHCARE" => 0.12,
+        "HUMANA" => 0.10,
+        "ANTHEM BLUE CROSS" => 0.16,
+        "KAISER FOUNDATION" => 0.08,
+        _ => 0.12,
+    };
+    let is_denied = rng.gen_bool(denial_rate);
     let is_partial = !is_denied && rng.gen_bool(0.15);
     let is_reversal = !is_denied && !is_partial && rng.gen_bool(0.03);
 
