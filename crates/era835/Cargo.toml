@@ -1,0 +1,19 @@
+[package]
+name = "era835"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "X12 835 Electronic Remittance Advice (ERA) parser — extracts claims, denials, adjustments, and remark codes from payer remittance files"
+
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+
+[[bin]]
+name = "era835"
+path = "src/bin/era835.rs"

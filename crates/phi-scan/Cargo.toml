@@ -1,0 +1,20 @@
+[package]
+name = "phi-scan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PHI scanner and HIPAA Safe Harbor de-identification — detects and redacts all 18 identifier categories"
+
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+blake3 = "1.5"
+
+[[bin]]
+name = "phi-scan"
+path = "src/bin/phi_scan.rs"
