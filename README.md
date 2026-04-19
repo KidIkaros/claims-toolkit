@@ -121,4 +121,4 @@ cargo test --release
 
 ## License
 
-Apache-2.0 OR MIT
+Apache-2.0 OR OPL-1.1

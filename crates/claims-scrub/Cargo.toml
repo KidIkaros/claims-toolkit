@@ -1,0 +1,18 @@
+[package]
+name = "claims-scrub"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Claims scrubbing engine — validates CPT/ICD-10 codes, NCCI edits, modifier rules, and diagnosis-procedure linkage"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
+regex = { workspace = true }
+
+[[bin]]
+name = "claims-scrub"
+path = "src/bin/claims_scrub.rs"
