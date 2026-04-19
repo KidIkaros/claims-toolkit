@@ -78,6 +78,10 @@ enum ParseOutput {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+
+        /// Output as CSV
+        #[arg(long)]
+        csv: bool,
     },
     /// Raw JSON output of parsed structure
     Json,
@@ -100,10 +104,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn cmd_parse(file: &PathBuf, output: Option<ParseOutput>) -> Result<(), Box<dyn std::error::Error>> {
     let raw = fs::read_to_string(file)
-        .map_err(|e| format!("Cannot read {}: {}", file.display(), e))?;
+        .map_err(|e| format!("Cannot read '{}': {}", file.display(), e))?;
 
     let era = era835::parse_era835(&raw)
-        .map_err(|e| format!("Parse error in {}: {}", file.display(), e))?;
+        .map_err(|e| format_parse_error(file, &e))?;
 
     match output {
         Some(ParseOutput::Summary { json }) => {
@@ -125,9 +129,11 @@ fn cmd_parse(file: &PathBuf, output: Option<ParseOutput>) -> Result<(), Box<dyn 
                 print_summary(&era);
             }
         }
-        Some(ParseOutput::Denials { json }) => {
+        Some(ParseOutput::Denials { json, csv }) => {
             let summaries = era.denial_summaries();
-            if json {
+            if csv {
+                export_denials_csv(&era);
+            } else if json {
                 println!("{}", serde_json::to_string_pretty(&summaries)?);
             } else {
                 print_denials(&era, &summaries);
@@ -351,4 +357,53 @@ fn print_phi_results(text: &str, result: &phi_scan::PhiScanResult, file: Option<
 
     println!("  Total: {} detections across {} categories", result.detections.len(), cats.len());
     println!("{}", "═".repeat(60).bright_red());
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+
+fn format_parse_error(file: &PathBuf, error: &era835::Era835Error) -> String {
+    match error {
+        era835::Era835Error::InvalidFormat(msg) => {
+            format!(
+                "Invalid 835 format in '{}':\n  {}\n\nThis file does not appear to be a valid X12 835 ERA file.\nCheck that:\n  - The file uses ~ as segment terminator\n  - The file starts with an ISA segment\n  - The file is not corrupted or truncated",
+                file.display(), msg
+            )
+        }
+        era835::Era835Error::MissingSegment(seg) => {
+            format!(
+                "Missing required segment in '{}':\n  Expected segment '{}' but it was not found.\n\nThe 835 file may be incomplete or from an unsupported format variant.",
+                file.display(), seg
+            )
+        }
+        era835::Era835Error::SegmentError { segment, detail } => {
+            format!(
+                "Error parsing segment '{}' in '{}':\n  {}\n\nThe segment may contain unexpected data or be malformed.",
+                segment, file.display(), detail
+            )
+        }
+    }
+}
+
+fn export_denials_csv(era: &era835::Remittance) {
+    println!("claim_id,denial_type,denied_amount,carc_codes,denial_reasons,appeal_recommendations");
+    for d in era.denial_summaries() {
+        let type_str = match d.denial_type {
+            era835::DenialType::FullDenial => "full",
+            era835::DenialType::PartialDenial => "partial",
+            era835::DenialType::Underpayment => "underpayment",
+        };
+        let carc = d.carc_codes.join(";");
+        let reasons: String = d.denial_reasons.iter()
+            .map(|r| r.replace('"', "'"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        let recs: String = d.appeal_recommendations.iter()
+            .map(|r| r.replace('"', "'"))
+            .collect::<Vec<_>>()
+            .join("; ");
+        println!(
+            "{},{},{:.2},\"{}\",\"{}\",\"{}\"",
+            d.claim_id, type_str, d.denied_amount, carc, reasons, recs
+        );
+    }
 }
