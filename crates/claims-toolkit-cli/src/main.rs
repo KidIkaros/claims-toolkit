@@ -1,4 +1,5 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, shells};
 use colored::Colorize;
 use std::fs;
 use std::io::{self, Read};
@@ -59,6 +60,13 @@ enum Commands {
         json: bool,
     },
 
+    /// Generate shell completions
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+
     /// Show information about the toolkit
     Info,
 }
@@ -94,6 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Parse { file, output } => cmd_parse(&file, output)?,
         Commands::Generate { count, output, seed, json } => cmd_generate(count, output, seed, json)?,
         Commands::Scan { file, redact, json } => cmd_scan(file, redact, json)?,
+        Commands::Completions { shell } => cmd_completions(shell),
         Commands::Info => cmd_info(),
     }
 
@@ -405,5 +414,25 @@ fn export_denials_csv(era: &era835::Remittance) {
             "{},{},{:.2},\"{}\",\"{}\",\"{}\"",
             d.claim_id, type_str, d.denied_amount, carc, reasons, recs
         );
+    }
+}
+
+#[derive(clap::ValueEnum, Clone, Copy)]
+enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    PowerShell,
+    Elvish,
+}
+
+fn cmd_completions(shell: Shell) {
+    let mut cmd = Cli::command();
+    match shell {
+        Shell::Bash => generate(shells::Bash, &mut cmd, "claims-toolkit", &mut io::stdout()),
+        Shell::Zsh => generate(shells::Zsh, &mut cmd, "claims-toolkit", &mut io::stdout()),
+        Shell::Fish => generate(shells::Fish, &mut cmd, "claims-toolkit", &mut io::stdout()),
+        Shell::PowerShell => generate(shells::PowerShell, &mut cmd, "claims-toolkit", &mut io::stdout()),
+        Shell::Elvish => generate(shells::Elvish, &mut cmd, "claims-toolkit", &mut io::stdout()),
     }
 }

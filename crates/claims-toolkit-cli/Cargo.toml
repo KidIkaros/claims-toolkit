@@ -12,6 +12,7 @@ phi-scan = { path = "../phi-scan" }
 clap = { workspace = true }
 colored = { workspace = true }
 serde_json = { workspace = true }
+clap_complete = "4"
 
 [[bin]]
 name = "claims-toolkit"
