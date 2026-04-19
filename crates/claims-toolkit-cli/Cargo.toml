@@ -1,0 +1,18 @@
+[package]
+name = "claims-toolkit-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Unified CLI for claims-toolkit — parse, generate, and scan healthcare data"
+
+[dependencies]
+era835 = { path = "../era835" }
+era835-synth = { path = "../era835-synth" }
+phi-scan = { path = "../phi-scan" }
+clap = { workspace = true }
+colored = { workspace = true }
+serde_json = { workspace = true }
+
+[[bin]]
+name = "claims-toolkit"
+path = "src/main.rs"

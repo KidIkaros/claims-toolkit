@@ -139,6 +139,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "claims-toolkit-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "colored",
+ "era835",
+ "era835-synth",
+ "phi-scan",
+ "serde_json",
+]
+
+[[package]]
 name = "clap"
 version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,0 +1,21 @@
+Patient: Maria Garcia
+DOB: 05/22/1978
+MRN: MG-2024-00891
+SSN: 456-78-9012
+Phone: (617) 555-0147
+Email: m.garcia@email.com
+
+Chief Complaint: Follow-up for hypertension management
+
+The patient presents for routine follow-up of hypertension diagnosed 3 years ago.
+Current medications: Lisinopril 20mg daily, Amlodipine 5mg daily.
+Blood pressure today: 142/88 mmHg (elevated).
+
+Plan:
+- Increase Lisinopril to 30mg daily
+- Follow up in 4 weeks
+- Continue current Amlodipine dose
+- CPT: 99214
+- ICD-10: I10 (Essential hypertension)
+
+Provider: Dr. Sarah Chen, NPI: 1234567890

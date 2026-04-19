@@ -1,80 +1,109 @@
 # Claims Toolkit
 
-Healthcare data tools — parse, generate, and scan X12 835 ERA files and clinical text.
+Healthcare data tools for X12 835 ERA files and PHI scanning. Three tools, one CLI, zero cloud dependencies.
 
-Three standalone tools in one repo. No cloud dependencies.
+## Install
 
-## Tools
+```bash
+# From source (requires Rust 1.85+)
+cargo install --path crates/claims-toolkit-cli
 
-| Tool | Library | CLI | Purpose |
-|------|---------|-----|---------|
-| **era835** | `era835` | `era835` | Parse X12 835 ERA remittance files |
-| **era835-synth** | `era835-synth` | `synthetic-era835` | Generate realistic 835 test files |
-| **phi-scan** | `phi-scan` | `phi-scan` | Detect and redact PHI (18 HIPAA categories) |
+# Or build all binaries
+cargo build --release
+# Binaries in target/release/: claims-toolkit, era835, synthetic-era835, phi-scan
+```
 
 ## Quick Start
 
 ```bash
-# Build all tools
-cargo build --release
+# 1. Generate a test 835 file
+claims-toolkit generate -n 5 --seed 42 -o test.835
 
-# Generate a synthetic 835 file
-synthetic-era835 --count 10 --seed 42 -o test.835
+# 2. Parse it
+claims-toolkit parse test.835 summary
 
-# Parse it
-era835 test.835                    # full report
-era835 denials test.835            # denial report with appeal recommendations
-era835 summary --json test.835     # JSON summary
+# 3. Get denial report
+claims-toolkit parse test.835 denials
 
-# Scan text for PHI
-echo 'Patient: John Smith, SSN 123-45-6789' | phi-scan
-echo 'Patient: John Smith, SSN 123-45-6789' | phi-scan redact
-phi-scan scan --json < clinical_note.txt
+# 4. Scan clinical text for PHI
+echo 'Patient: John Smith, SSN 123-45-6789' | claims-toolkit scan
 
-# Pipeline: generate → parse → analyze
-synthetic-era835 -n 50 | era835 denials --json
+# 5. Redact PHI
+echo 'Patient: John Smith, SSN 123-45-6789' | claims-toolkit scan --redact
 ```
 
-## era835 — ERA Parser
+## Commands
 
-Parses X12 835 Electronic Remittance Advice files. Extracts:
+### `claims-toolkit parse <file>`
 
-- Payer/payee identification
-- Claim payment details (status, amounts, patient info)
-- Service line adjudication (CPT codes, modifiers, charges)
-- CAS adjustments (CO/PR/OA/PI/CR groups with CARC codes)
-- Provider-level adjustments (PLB)
-- Denial analysis with appeal recommendations
+Parse an X12 835 ERA remittance file.
 
-40+ built-in CARC code descriptions with appeal strategies.
+```
+claims-toolkit parse remittance.835            # Full claim-by-claim report
+claims-toolkit parse remittance.835 summary    # Financial summary
+claims-toolkit parse remittance.835 denials    # Denial report with appeal recommendations
+claims-toolkit parse remittance.835 json       # Raw JSON output
+claims-toolkit parse remittance.835 summary --json  # JSON summary
+claims-toolkit parse remittance.835 denials --json  # JSON denials
+```
 
-## era835-synth — Synthetic Generator
+### `claims-toolkit generate`
 
-Generates realistic X12 835 ERA files for testing. Features:
+Generate synthetic X12 835 ERA files for testing.
 
-- Realistic CPT codes with proper charge distributions
-- 12% denial rate with CARC codes
-- Service-line level adjudication
-- All adjustment group codes (CO, PR, OA, PI, CR)
-- Patient names, member IDs, service dates
-- Seeded RNG for reproducible test data
-- Roundtrip verified: generate → parse → structure matches
+```
+claims-toolkit generate -n 10                  # 10 claims to stdout
+claims-toolkit generate -n 10 -o test.835      # Save to file
+claims-toolkit generate -n 10 --seed 42        # Reproducible (same seed = same output)
+claims-toolkit generate -n 5 --json            # JSON instead of X12
+```
 
-## phi-scan — PHI Scanner
+### `claims-toolkit scan`
 
-Detects Protected Health Information across 18 HIPAA Safe Harbor categories:
+Scan text for Protected Health Information (PHI).
 
+```
+claims-toolkit scan note.txt                   # Scan file, show report
+claims-toolkit scan --redact note.txt          # Redact PHI
+claims-toolkit scan --json note.txt            # JSON output
+echo 'text' | claims-toolkit scan              # Read from stdin
+echo 'text' | claims-toolkit scan --redact     # Redact from stdin
+```
+
+Detects all 18 HIPAA Safe Harbor identifier categories:
 Names, Geographic, Dates, Phone, Fax, Email, SSN, MRN,
 Health Plan IDs, Account Numbers, Certificates, Vehicle IDs,
 Device IDs, URLs, IP Addresses, Biometric terms, CPT codes, ICD-10 codes
 
-## Tests
+## Libraries
+
+Each tool is also available as a Rust library:
+
+```toml
+[dependencies]
+era835 = "0.1"         # Parse X12 835 ERA files
+era835-synth = "0.1"   # Generate synthetic 835 files
+phi-scan = "0.1"       # Scan and redact PHI
+```
+
+## Examples
+
+See `samples/` for example files:
+- `realistic_5claim.835` — Multi-claim ERA with denials
+- `minimal_1claim.835` — Single claim ERA
+- `clinical_note_sample.txt` — Clinical note with PHI for scanning
+
+## Testing
 
 ```
 era835:         58 tests (16 unit + 42 integration)
 era835-synth:    6 roundtrip tests
 phi-scan:        5 tests
 Total:          69 tests
+```
+
+```bash
+cargo test --release
 ```
 
 ## License

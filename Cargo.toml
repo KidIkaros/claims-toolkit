@@ -4,6 +4,7 @@ members = [
     "crates/era835",
     "crates/era835-synth",
     "crates/phi-scan",
+    "crates/claims-toolkit-cli",
 ]
 
 [workspace.package]
