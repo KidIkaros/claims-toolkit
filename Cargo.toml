@@ -6,6 +6,7 @@ members = [
     "crates/phi-scan",
     "crates/claims-scrub",
     "crates/claims-toolkit-cli",
+    "crates/codes",
 ]
 
 [workspace.package]
