@@ -60,6 +60,31 @@ enum Commands {
         json: bool,
     },
 
+    /// Validate a claim (CPT/ICD-10, NCCI edits, modifiers)
+    Scrub {
+        /// Claim file as JSON (reads stdin if omitted)
+        file: Option<PathBuf>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Parse 835 + scrub all claims in one pass (Tier 1 → 2 pipeline)
+    Check {
+        /// ERA 835 file (reads stdin if omitted)
+        file: Option<PathBuf>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Comma-separated diagnosis codes to apply to all claims
+        /// (835 files don't carry DX codes; provide them here)
+        #[arg(long, value_delimiter = ',')]
+        dx: Vec<String>,
+    },
+
     /// Generate shell completions
     Completions {
         /// Shell to generate completions for
@@ -102,6 +127,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Parse { file, output } => cmd_parse(&file, output)?,
         Commands::Generate { count, output, seed, json } => cmd_generate(count, output, seed, json)?,
         Commands::Scan { file, redact, json } => cmd_scan(file, redact, json)?,
+        Commands::Scrub { file, json } => cmd_scrub(file, json)?,
+        Commands::Check { file, json, dx } => cmd_check(file, json, dx)?,
         Commands::Completions { shell } => cmd_completions(shell),
         Commands::Info => cmd_info(),
     }
@@ -232,6 +259,256 @@ fn cmd_scan(file: Option<PathBuf>, redact: bool, json: bool) -> Result<(), Box<d
     Ok(())
 }
 
+
+// ── Scrub Command ──────────────────────────────────────────────
+
+fn cmd_scrub(file: Option<PathBuf>, json: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = match &file {
+        Some(path) => fs::read_to_string(path)?,
+        None => {
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf)?;
+            buf
+        }
+    };
+
+    let claim: claims_scrub::Claim = serde_json::from_str(&raw)
+        .map_err(|e| format!("Invalid claim JSON: {}", e))?;
+
+    let scrubber = claims_scrub::ClaimsScrubber::new();
+    let result = scrubber.validate_claim(&claim);
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
+
+    println!("{}", "═".repeat(60).bright_blue());
+    println!("  Claims Scrub — {}", claim.claim_id.bright_white());
+    println!("{}", "═".repeat(60).bright_blue());
+    println!();
+
+    if result.is_clean {
+        println!("  {} Claim is clean — no issues found.", "✓".bright_green());
+    } else {
+        println!("  {} Claim has issues:", "⚠".bright_yellow());
+    }
+
+    println!();
+    println!("  Errors:   {}", if result.error_count > 0 { format!("{}", result.error_count).bright_red().to_string() } else { "0".bright_green().to_string() });
+    println!("  Warnings: {}", if result.warning_count > 0 { format!("{}", result.warning_count).bright_yellow().to_string() } else { "0".bright_green().to_string() });
+    println!("  Denial Risk: {}%", if result.denial_risk > 50 { format!("{}", result.denial_risk).bright_red().to_string() } else { format!("{}", result.denial_risk).bright_green().to_string() });
+    println!();
+
+    if !result.findings.is_empty() {
+        println!("{}", "═".repeat(60).bright_blue());
+        for (i, f) in result.findings.iter().enumerate() {
+            let sev = match f.severity {
+                claims_scrub::FindingSeverity::Error => "ERROR".bright_red().bold().to_string(),
+                claims_scrub::FindingSeverity::Warning => "WARN".bright_yellow().bold().to_string(),
+                claims_scrub::FindingSeverity::Info => "INFO".bright_blue().to_string(),
+            };
+            let line = f.line_number.map(|l| format!("Line {}", l)).unwrap_or_default();
+            println!("  {}. [{}] {} {}", i + 1, sev, line.dimmed(), f.description);
+            if let Some(ref s) = f.suggestion {
+                println!("     → {}", s.bright_white());
+            }
+        }
+        println!("{}", "═".repeat(60).bright_blue());
+    }
+
+    if !result.corrections.is_empty() {
+        println!();
+        println!("  {} Corrections:", "💡".bright_yellow());
+        for c in &result.corrections {
+            println!("    • {}", c);
+        }
+    }
+
+    Ok(())
+}
+// ── Check Command (Tier 1 → 2 Pipeline) ──────────────────
+
+fn cmd_check(
+    file: Option<PathBuf>,
+    json: bool,
+    dx: Vec<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = match &file {
+        Some(path) => fs::read_to_string(path)
+            .map_err(|e| format!("Cannot read '{}': {}", path.display(), e))?,
+        None => {
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf)?;
+            buf
+        }
+    };
+
+    let era = era835::parse_era835(&raw)?;
+    let payer_name = era.payer.name.clone();
+    let scrubber = claims_scrub::ClaimsScrubber::new();
+
+    let mut all_results: Vec<claims_scrub::ClaimScrubResult> = Vec::new();
+    let mut total_errors = 0usize;
+    let mut total_warnings = 0usize;
+    let mut clean_count = 0usize;
+    let mut dirty_count = 0usize;
+
+    for claim_payment in &era.claims {
+        let claim = claims_scrub::claim_from_era835(claim_payment, &payer_name, &dx);
+        let result = scrubber.validate_claim(&claim);
+
+        let carc_codes: Vec<String> = claim_payment
+            .adjustments
+            .iter()
+            .map(|a| a.reason_code.clone())
+            .collect();
+
+        let original_denied = claim_payment.paid_amount == 0.0 && claim_payment.charge_amount > 0.0;
+
+        total_errors += result.error_count;
+        total_warnings += result.warning_count;
+        if result.is_clean {
+            clean_count += 1;
+        } else {
+            dirty_count += 1;
+        }
+
+        all_results.push(claims_scrub::ClaimScrubResult {
+            claim_id: claim_payment.patient_control_number.clone(),
+            payer_claim_number: claim_payment.payer_claim_number.clone(),
+            scrub_result: result,
+            original_denied,
+            original_denied_amount: if original_denied {
+                claim_payment.charge_amount
+            } else {
+                0.0
+            },
+            carc_codes,
+        });
+    }
+
+    if json {
+        let output = serde_json::json!({
+            "era_file": file.as_ref().map(|p| p.display().to_string()),
+            "payer": era.payer.name,
+            "total_claims": era.claims.len(),
+            "total_charged": era.total_charged(),
+            "total_paid": era.total_paid(),
+            "clean_count": clean_count,
+            "dirty_count": dirty_count,
+            "total_errors": total_errors,
+            "total_warnings": total_warnings,
+            "results": all_results,
+        });
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
+    // Pretty output
+    println!("{}", "═".repeat(60).bright_blue());
+    println!(
+        "  Claims Check — {} {}",
+        era.payer.name.bright_white(),
+        file.as_ref()
+            .map(|p| format!("({})", p.display()))
+            .unwrap_or_default()
+            .dimmed()
+    );
+    println!("{}", "═".repeat(60).bright_blue());
+    println!();
+    println!(
+        "  ERA: {} claims | ${:.2} charged | ${:.2} paid",
+        era.claims.len(),
+        era.total_charged(),
+        era.total_paid()
+    );
+    println!(
+        "  Scrub: {} clean | {} with issues | {} errors | {} warnings",
+        if clean_count > 0 {
+            format!("{}", clean_count).bright_green().to_string()
+        } else {
+            format!("{}", clean_count).dimmed().to_string()
+        },
+        if dirty_count > 0 {
+            format!("{}", dirty_count).bright_red().to_string()
+        } else {
+            format!("{}", dirty_count).dimmed().to_string()
+        },
+        if total_errors > 0 {
+            format!("{}", total_errors).bright_red().to_string()
+        } else {
+            "0".bright_green().to_string()
+        },
+        if total_warnings > 0 {
+            format!("{}", total_warnings).bright_yellow().to_string()
+        } else {
+            "0".bright_green().to_string()
+        },
+    );
+    println!();
+
+    if all_results.is_empty() {
+        println!("  No claims found in ERA file.");
+        return Ok(());
+    }
+
+    println!("{}", "═".repeat(60).bright_blue());
+    for (i, cr) in all_results.iter().enumerate() {
+        let icon = if cr.scrub_result.is_clean {
+            "✓".bright_green().to_string()
+        } else {
+            "✗".bright_red().to_string()
+        };
+
+        let risk_color = if cr.scrub_result.denial_risk > 50 {
+            format!("{}%", cr.scrub_result.denial_risk).bright_red().to_string()
+        } else if cr.scrub_result.denial_risk > 20 {
+            format!("{}%", cr.scrub_result.denial_risk).bright_yellow().to_string()
+        } else {
+            format!("{}%", cr.scrub_result.denial_risk).bright_green().to_string()
+        };
+
+        let denied_tag = if cr.original_denied {
+            " [DENIED]".bright_red().bold().to_string()
+        } else {
+            String::new()
+        };
+
+        println!(
+            "  {} Claim {} — risk {}{}{}",
+            icon,
+            cr.claim_id.bright_white(),
+            risk_color,
+            denied_tag,
+            if !cr.scrub_result.is_clean {
+                format!(
+                    " ({} err, {} warn)",
+                    cr.scrub_result.error_count, cr.scrub_result.warning_count
+                )
+                .dimmed()
+                .to_string()
+            } else {
+                String::new()
+            }
+        );
+
+        if !cr.scrub_result.findings.is_empty() {
+            for f in &cr.scrub_result.findings {
+                let sev = match f.severity {
+                    claims_scrub::FindingSeverity::Error => "ERR".bright_red().to_string(),
+                    claims_scrub::FindingSeverity::Warning => "WRN".bright_yellow().to_string(),
+                    claims_scrub::FindingSeverity::Info => "INF".bright_blue().to_string(),
+                };
+                println!("     [{}] {}", sev, f.description.dimmed());
+            }
+        }
+    }
+    println!("{}", "═".repeat(60).bright_blue());
+
+    Ok(())
+}
+
 // ── Info Command ──────────────────────────────────────────────
 
 fn cmd_info() {
@@ -242,8 +519,9 @@ fn cmd_info() {
     println!("  {} Parse X12 835 ERA remittance files", "parse".bright_cyan());
     println!("  {} Generate synthetic 835 test files", "generate".bright_cyan());
     println!("  {} Scan and redact PHI in clinical text", "scan".bright_cyan());
+    println!("  {} Validate a claim (CPT, NCCI, modifiers)", "scrub".bright_cyan());
+    println!("  {} Parse + scrub all claims in an 835 file", "check".bright_cyan());
     println!();
-    println!("Quick start:");
     println!("  claims-toolkit generate -n 5 -o test.835");
     println!("  claims-toolkit parse test.835");
     println!("  echo 'text' | claims-toolkit scan");

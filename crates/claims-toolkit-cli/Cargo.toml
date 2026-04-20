@@ -9,6 +9,7 @@ description = "Unified CLI for claims-toolkit — parse, generate, and scan heal
 era835 = { path = "../era835" }
 era835-synth = { path = "../era835-synth" }
 phi-scan = { path = "../phi-scan" }
+claims-scrub = { path = "../claims-scrub" }
 clap = { workspace = true }
 colored = { workspace = true }
 serde_json = { workspace = true }

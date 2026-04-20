@@ -6,9 +6,11 @@ license.workspace = true
 description = "Claims scrubbing engine — validates CPT/ICD-10 codes, NCCI edits, modifier rules, and diagnosis-procedure linkage"
 
 [dependencies]
+codes = { path = "../codes" }
+era835 = { path = "../era835" }
+chrono = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-chrono = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 regex = { workspace = true }

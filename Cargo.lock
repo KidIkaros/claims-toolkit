@@ -151,9 +151,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "claims-scrub"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "codes",
+ "colored",
+ "era835",
+ "regex",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "claims-toolkit-cli"
 version = "0.1.0"
 dependencies = [
+ "claims-scrub",
  "clap",
  "clap_complete",
  "colored",
@@ -212,6 +227,15 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "codes"
+version = "0.1.0"
+dependencies = [
+ "once_cell",
+ "rustc-hash",
+ "serde",
+]
 
 [[package]]
 name = "colorchoice"
@@ -589,6 +613,12 @@ name = "regex-syntax"
 version = "0.8.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
+
+[[package]]
+name = "rustc-hash"
+version = "2.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
 
 [[package]]
 name = "rustix"

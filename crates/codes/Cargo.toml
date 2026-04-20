@@ -1,0 +1,11 @@
+[package]
+name = "codes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "US medical code databases (CPT, ICD-10-CM, CARC, modifiers) for healthcare claims processing"
+
+[dependencies]
+serde = { workspace = true }
+once_cell = { workspace = true }
+rustc-hash = { workspace = true }
