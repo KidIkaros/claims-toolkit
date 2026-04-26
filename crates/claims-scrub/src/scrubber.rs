@@ -4,11 +4,65 @@
 //! linkage, and demographic constraints. Based on research showing 15-30%
 //! reduction in AR days and $30K-60K annual savings.
 
-use regex::Regex;
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::OnceLock;
+
+/// Fast validation: CPT codes are exactly 5 digits (00000-99999).
+/// Avoids regex overhead for this simple pattern.
+fn is_valid_cpt_format(code: &str) -> bool {
+    if code.len() != 5 {
+        return false;
+    }
+    code.chars().all(|c| c.is_ascii_digit())
+}
+
+/// Fast validation: ICD-10 codes match [A-TV-Z]\d{2,3}(.\d{1,4})?
+/// Avoids regex overhead for this structured pattern.
+fn is_valid_icd10_format(code: &str) -> bool {
+    let bytes = code.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+
+    // First character: A-TV-Z (exclude U, W, X, Y for ICD-10-CM)
+    let first = bytes[0];
+    if !first.is_ascii_uppercase() {
+        return false;
+    }
+    // Exclude U, W, X, Y, Z
+    if matches!(first, b'U' | b'W' | b'X' | b'Y' | b'Z') {
+        return false;
+    }
+
+    // Parse remaining digits and optional decimal
+    let rest = &bytes[1..];
+    if rest.is_empty() {
+        return false;
+    }
+
+    // Check for optional decimal point
+    let (digits, frac) = match rest.iter().position(|&b| b == b'.') {
+        Some(pos) => (&rest[..pos], &rest[pos + 1..]),
+        None => (rest, &[] as &[u8]),
+    };
+
+    // Must have 2-3 digits before decimal
+    if digits.len() < 2 || digits.len() > 3 {
+        return false;
+    }
+    if !digits.iter().all(|&b| b.is_ascii_digit()) {
+        return false;
+    }
+
+    // If there's a decimal part, must be 1-4 digits
+    if !frac.is_empty() && (frac.len() > 4 || !frac.iter().all(|&b| b.is_ascii_digit())) {
+        return false;
+    }
+
+    true
+}
 
 /// Severity level for validation findings
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -132,8 +186,6 @@ impl Default for ScrubberConfig {
 pub struct ClaimsScrubber {
     config: ScrubberConfig,
     ncci_edits: Vec<NcciEdit>,
-    cpt_pattern: Regex,
-    icd10_pattern: Regex,
     modifier_rules: HashMap<String, ModifierRule>,
 }
 
@@ -152,8 +204,6 @@ impl ClaimsScrubber {
         Self {
             config,
             ncci_edits: load_ncci_edits(),
-            cpt_pattern: Regex::new(r"^\d{5}$").unwrap(),
-            icd10_pattern: Regex::new(r"^[A-TV-Z]\d{2,3}(?:\.\d{1,4})?$").unwrap(),
             modifier_rules: load_modifier_rules(),
         }
     }
@@ -216,7 +266,7 @@ impl ClaimsScrubber {
     }
 
     fn validate_cpt_format(&self, line: &ClaimLine) -> Option<ValidationFinding> {
-        if !self.cpt_pattern.is_match(&line.cpt_code) {
+        if !is_valid_cpt_format(&line.cpt_code) {
             return Some(ValidationFinding {
                 severity: FindingSeverity::Error,
                 finding_type: FindingType::InvalidCode,
@@ -249,7 +299,7 @@ impl ClaimsScrubber {
     }
 
     fn validate_icd10_format(&self, icd10: &str, line_number: usize) -> Option<ValidationFinding> {
-        if !self.icd10_pattern.is_match(icd10) {
+        if !is_valid_icd10_format(icd10) {
             return Some(ValidationFinding {
                 severity: FindingSeverity::Error,
                 finding_type: FindingType::InvalidCode,

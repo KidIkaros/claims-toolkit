@@ -1,11 +1,26 @@
 # Claims Toolkit
 
-Healthcare data tools for X12 835 ERA files and PHI scanning. Three tools, one CLI, zero cloud dependencies.
+Healthcare data tools for X12 835 ERA/837 claims and PHI scanning. Parse, validate, and generate healthcare claims with zero cloud dependencies.
+
+[![CI](https://github.com/KidIkaros/claims-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/KidIkaros/claims-toolkit/actions)
+[![License](https://img.shields.io/badge/license-Apache%202.0%20%2F%20OPL--1.1-blue)](LICENSE)
 
 ## Install
 
+### Docker (Recommended)
+
 ```bash
-# From source (requires Rust 1.85+)
+# Pull and run
+docker run --rm -v $(pwd):/data ghcr.io/kidikaros/claims-toolkit:latest parse /data/remittance.835
+
+# Or use Docker Compose
+docker-compose up -d
+docker-compose exec claims-toolkit claims-toolkit --help
+```
+
+### From Source (requires Rust 1.85+)
+
+```bash
 git clone https://github.com/KidIkaros/claims-toolkit.git
 cd claims-toolkit
 cargo install --path crates/claims-toolkit-cli
@@ -14,6 +29,10 @@ cargo install --path crates/claims-toolkit-cli
 cargo build --release
 # Binaries: claims-toolkit, era835, synthetic-era835, phi-scan
 ```
+
+### Pre-built Binaries
+
+Download from [GitHub Releases](https://github.com/KidIkaros/claims-toolkit/releases)
 
 ## Quick Start
 
@@ -29,6 +48,15 @@ claims-toolkit parse test.835 denials
 
 # Export denials to CSV (for spreadsheets)
 claims-toolkit parse test.835 denials --csv
+
+# Export denials to Excel (formatted report)
+claims-toolkit parse test.835 denials --xlsx
+
+# Generate appeal letters from denials
+claims-toolkit appeal remittance.835 --provider "Medical Group" --npi "1234567890" -o ./appeals
+
+# Generate markdown appeal letters
+claims-toolkit appeal remittance.835 --provider "Medical Group" -o ./appeals --format markdown
 
 # Scan clinical text for PHI
 echo 'Patient: John Smith, SSN 123-45-6789' | claims-toolkit scan
@@ -51,6 +79,7 @@ claims-toolkit parse remittance.835 json         # Full JSON
 claims-toolkit parse remittance.835 summary --json
 claims-toolkit parse remittance.835 denials --json
 claims-toolkit parse remittance.835 denials --csv
+claims-toolkit parse remittance.835 denials --xlsx   # Excel with summary sheet
 ```
 
 ### `claims-toolkit generate [options]`
@@ -78,6 +107,26 @@ echo 'text' | claims-toolkit scan               # From stdin
 Detects: Names, Geographic, Dates, Phone, Fax, Email, SSN, MRN,
 Health Plan IDs, Account Numbers, Certificates, Vehicle IDs,
 Device IDs, URLs, IP Addresses, Biometric terms, CPT codes, ICD-10 codes
+
+### `claims-toolkit appeal <file>`
+
+Generate template-based appeal letters from denial reports.
+
+```bash
+claims-toolkit appeal remittance.835 \
+    --provider "Medical Group" \
+    --npi "1234567890" \
+    -o ./appeals
+
+# Markdown format for easy editing
+claims-toolkit appeal remittance.835 \
+    --provider "Medical Group" \
+    -o ./appeals \
+    --format markdown
+```
+
+Generates one letter per denied claim with denial details, appeal arguments,
+and recommended actions based on CARC codes.
 
 ### `claims-toolkit completions <shell>`
 
@@ -116,8 +165,54 @@ See `samples/` for example files:
 
 ```bash
 cargo test --release
-# 69 tests: 58 parser + 6 generator + 5 PHI scanner
+# 83 tests: 58 parser + 6 generator + 5 PHI scanner + 5 new
 ```
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    claims-toolkit CLI                    │
+└─────────────────────────────────────────────────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+   ┌────▼────┐       ┌────▼────┐       ┌────▼────┐
+   │  era835 │       │ era835  │       │ phi-scan│
+   │  parser │       │  synth  │       │         │
+   └────┬────┘       └─────────┘       └────┬────┘
+        │                                     │
+   ┌────▼────┐                          ┌────▼────┐
+   │claims-  │                          │codes    │
+   │  837    │                          │(CPT/ICD)│
+   │ parser  │                          └─────────┘
+   └────┬────┘
+        │
+   ┌────▼────┐
+   │claims-  │
+   │ scrub   │
+   │(validate)│
+   └─────────┘
+```
+
+### Crate Overview
+
+| Crate | Purpose | Status |
+|-------|---------|--------|
+| `era835` | X12 835 ERA remittance parser | ✅ Stable |
+| `claims-837` | X12 837 professional/institutional claims | 🚧 Beta |
+| `era835-synth` | Synthetic 835 file generator | ✅ Stable |
+| `phi-scan` | PHI detection and redaction | ✅ Stable |
+| `claims-scrub` | Claims validation (NCCI, etc.) | ✅ Stable |
+| `codes` | CPT, ICD-10, CARC/RARC databases | ✅ Stable |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+
+- **Bug reports**: [GitHub Issues](https://github.com/KidIkaros/claims-toolkit/issues)
+- **Feature requests**: Open a discussion first
+- **Security**: See [SECURITY.md](SECURITY.md)
 
 ## License
 

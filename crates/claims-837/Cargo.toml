@@ -1,0 +1,17 @@
+[package]
+name = "claims-837"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "X12 837 Professional/Institutional Claims Parser"
+repository = "https://github.com/KidIkaros/claims-toolkit"
+keywords = ["x12", "837", "healthcare", "claims", "hipaa"]
+categories = ["parser-implementations", "command-line-utilities"]
+
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

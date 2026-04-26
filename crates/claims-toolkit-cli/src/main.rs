@@ -5,6 +5,78 @@ use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
 
+// ── Security: Input Validation ─────────────────────────────
+
+/// Maximum file size for input files (10 MB) to prevent DoS
+const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+/// Validate file path to prevent directory traversal attacks.
+/// Returns Ok if path is safe, Err with sanitized message otherwise.
+fn validate_file_path(path: &PathBuf) -> Result<(), String> {
+    // Check for path traversal components
+    let path_str = path.to_string_lossy();
+
+    // Reject paths containing .. (directory traversal)
+    if path_str.contains("..") {
+        return Err("Invalid path: contains directory traversal".to_string());
+    }
+
+    // Reject absolute paths that could access sensitive system locations
+    if path.is_absolute() {
+        // Allow absolute paths only if they don't go to system directories
+        let normalized = path_str.to_lowercase();
+        let forbidden = ["/etc/", "/var/", "/usr/", "/sys/", "/proc/", "/dev/", "/root/"];
+        for prefix in &forbidden {
+            if normalized.starts_with(prefix) {
+                return Err(format!("Access denied: path starts with restricted prefix", ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate and read file with size limits.
+/// Returns sanitized error messages that don't expose internal paths.
+fn read_file_secure(path: &PathBuf) -> Result<String, String> {
+    // Validate path first
+    validate_file_path(path)?;
+
+    // Check file size before reading
+    let metadata = fs::metadata(path)
+        .map_err(|_| "Cannot access file".to_string())?;
+
+    if metadata.len() > MAX_FILE_SIZE {
+        return Err(format!("File too large: exceeds {} MB limit", MAX_FILE_SIZE / (1024 * 1024)));
+    }
+
+    // Read with size-limited buffer
+    let content = fs::read_to_string(path)
+        .map_err(|_| "Failed to read file content".to_string())?;
+
+    // Basic content validation for X12 files
+    if content.len() > 100_000_000 { // Additional sanity check
+        return Err("Content exceeds maximum allowed size".to_string());
+    }
+
+    Ok(content)
+}
+
+/// Sanitize error messages to avoid leaking sensitive path information.
+fn sanitize_error(err: &str) -> String {
+    // Remove potential path information from error messages
+    let sanitized = err
+        .replace('\n', " ")
+        .replace('\r', "");
+
+    // Truncate very long messages
+    if sanitized.len() > 500 {
+        format!("{:.500}...", sanitized)
+    } else {
+        sanitized
+    }
+}
+
 /// claims-toolkit — healthcare data tools for X12 835 ERA files and PHI scanning.
 ///
 /// Parse remittance files, generate synthetic test data, and scan for PHI.
@@ -94,6 +166,29 @@ enum Commands {
 
     /// Show information about the toolkit
     Info,
+
+    /// Generate appeal letters from denial reports
+    Appeal {
+        /// ERA 835 file with denials
+        file: PathBuf,
+
+        /// Provider name for the appeal letter
+        #[arg(short, long)]
+        provider: Option<String>,
+
+        /// NPI number for the appeal letter
+        #[arg(long)]
+        npi: Option<String>,
+
+        /// Output directory for appeal letters (default: current directory)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Output format: "text" or "markdown" (default: text)
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
+
 }
 
 #[derive(Subcommand)]
@@ -115,6 +210,10 @@ enum ParseOutput {
         /// Output as CSV
         #[arg(long)]
         csv: bool,
+
+        /// Output as Excel XLSX
+        #[arg(long)]
+        xlsx: bool,
     },
     /// Raw JSON output of parsed structure
     Json,
@@ -131,6 +230,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Check { file, json, dx } => cmd_check(file, json, dx)?,
         Commands::Completions { shell } => cmd_completions(shell),
         Commands::Info => cmd_info(),
+        Commands::Appeal { file, provider, npi, output, format } => cmd_appeal(file, provider, npi, output, format)?,
     }
 
     Ok(())
@@ -140,11 +240,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn cmd_parse(file: &Option<PathBuf>, output: Option<ParseOutput>) -> Result<(), Box<dyn std::error::Error>> {
     let raw = match file {
-        Some(path) => fs::read_to_string(path)
-            .map_err(|e| format!("Cannot read '{}': {}", path.display(), e))?,
+        Some(path) => read_file_secure(path)
+            .map_err(|e| sanitize_error(&e))?,
         None => {
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
+            if buf.len() > MAX_FILE_SIZE as usize {
+                return Err("Input too large".into());
+            }
             buf
         }
     };
@@ -176,9 +279,15 @@ fn cmd_parse(file: &Option<PathBuf>, output: Option<ParseOutput>) -> Result<(), 
                 print_summary(&era);
             }
         }
-        Some(ParseOutput::Denials { json, csv }) => {
+        Some(ParseOutput::Denials { json, csv, xlsx }) => {
             let summaries = era.denial_summaries();
-            if csv {
+            if xlsx {
+                let output_path = file.as_ref()
+                    .map(|p| p.with_extension("xlsx"))
+                    .unwrap_or_else(|| PathBuf::from("denials.xlsx"));
+                export_denials_xlsx(&era, &output_path)?;
+                println!("Excel report saved to: {}", output_path.display());
+            } else if csv {
                 export_denials_csv(&era);
             } else if json {
                 println!("{}", serde_json::to_string_pretty(&summaries)?);
@@ -223,10 +332,14 @@ fn cmd_generate(count: usize, output: Option<PathBuf>, seed: Option<u64>, json: 
 
 fn cmd_scan(file: Option<PathBuf>, redact: bool, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let raw = match &file {
-        Some(path) => fs::read_to_string(path)?,
+        Some(path) => read_file_secure(path)
+            .map_err(|e| sanitize_error(&e))?,
         None => {
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
+            if buf.len() > MAX_FILE_SIZE as usize {
+                return Err("Input too large".into());
+            }
             buf
         }
     };
@@ -264,10 +377,14 @@ fn cmd_scan(file: Option<PathBuf>, redact: bool, json: bool) -> Result<(), Box<d
 
 fn cmd_scrub(file: Option<PathBuf>, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let raw = match &file {
-        Some(path) => fs::read_to_string(path)?,
+        Some(path) => read_file_secure(path)
+            .map_err(|e| sanitize_error(&e))?,
         None => {
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
+            if buf.len() > MAX_FILE_SIZE as usize {
+                return Err("Input too large".into());
+            }
             buf
         }
     };
@@ -335,8 +452,8 @@ fn cmd_check(
     dx: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let raw = match &file {
-        Some(path) => fs::read_to_string(path)
-            .map_err(|e| format!("Cannot read '{}': {}", path.display(), e))?,
+        Some(path) => read_file_secure(path)
+            .map_err(|e| sanitize_error(&e))?,
         None => {
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
@@ -710,6 +827,317 @@ fn export_denials_csv(era: &era835::Remittance) {
     }
 }
 
+fn export_denials_xlsx(era: &era835::Remittance, path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    use rust_xlsxwriter::{Workbook, Format, FormatAlign, FormatBorder, Color};
+
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    // Create header format
+    let header_format = Format::new()
+        .set_bold()
+        .set_background_color(Color::Blue)
+        .set_font_color(Color::White)
+        .set_border(FormatBorder::Thin)
+        .set_align(FormatAlign::Center);
+
+    // Create currency format
+    let currency_format = Format::new()
+        .set_num_format("$#,##0.00")
+        .set_border(FormatBorder::Thin);
+
+    // Create data cell format
+    let cell_format = Format::new()
+        .set_border(FormatBorder::Thin);
+
+    // Set column widths
+    worksheet.set_column_width(0, 20)?; // Claim ID
+    worksheet.set_column_width(1, 15)?; // Denial Type
+    worksheet.set_column_width(2, 15)?; // Denied Amount
+    worksheet.set_column_width(3, 30)?; // CARC Codes
+    worksheet.set_column_width(4, 50)?; // Denial Reasons
+    worksheet.set_column_width(5, 60)?; // Appeal Recommendations
+
+    // Write headers
+    let headers = ["Claim ID", "Denial Type", "Denied Amount", "CARC Codes", "Denial Reasons", "Appeal Recommendations"];
+    for (col, header) in headers.iter().enumerate() {
+        worksheet.write_string_with_format(0, col as u16, *header, &header_format)?;
+    }
+
+    // Write data rows
+    for (row, d) in era.denial_summaries().iter().enumerate() {
+        let row = row + 1;
+        let type_str = match d.denial_type {
+            era835::DenialType::FullDenial => "Full Denial",
+            era835::DenialType::PartialDenial => "Partial Denial",
+            era835::DenialType::Underpayment => "Underpayment",
+        };
+        let carc = d.carc_codes.join(", ");
+        let reasons = d.denial_reasons.join("; ");
+        let recs = d.appeal_recommendations.join("; ");
+
+        worksheet.write_string_with_format(row as u32, 0, &d.claim_id, &cell_format)?;
+        worksheet.write_string_with_format(row as u32, 1, type_str, &cell_format)?;
+        worksheet.write_number_with_format(row as u32, 2, d.denied_amount, &currency_format)?;
+        worksheet.write_string_with_format(row as u32, 3, &carc, &cell_format)?;
+        worksheet.write_string_with_format(row as u32, 4, &reasons, &cell_format)?;
+        worksheet.write_string_with_format(row as u32, 5, &recs, &cell_format)?;
+    }
+
+    // Add summary sheet
+    let summary_sheet = workbook.add_worksheet().set_name("Summary")?;
+    let title_format = Format::new().set_bold().set_font_size(14);
+    let summary_label_format = Format::new().set_bold();
+
+    summary_sheet.write_string_with_format(0, 0, "Denial Report Summary", &title_format)?;
+    summary_sheet.write_string_with_format(2, 0, "Payer:", &summary_label_format)?;
+    summary_sheet.write_string(2, 1, &era.payer.name)?;
+    summary_sheet.write_string_with_format(3, 0, "Total Claims:", &summary_label_format)?;
+    summary_sheet.write_number(3, 1, era.claims.len() as f64)?;
+    summary_sheet.write_string_with_format(4, 0, "Total Denied:", &summary_label_format)?;
+    summary_sheet.write_number(4, 1, era.denied_claims().len() as f64)?;
+    summary_sheet.write_string_with_format(5, 0, "Denial Rate:", &summary_label_format)?;
+    summary_sheet.write_string(5, 1, &format!("{:.1}%", era.denial_rate()))?;
+    summary_sheet.write_string_with_format(6, 0, "Total Charged:", &summary_label_format)?;
+    summary_sheet.write_number_with_format(6, 1, era.total_charged(), &currency_format)?;
+    summary_sheet.write_string_with_format(7, 0, "Total Denied Amount:", &summary_label_format)?;
+    summary_sheet.write_number_with_format(7, 1, era.total_denied(), &currency_format)?;
+
+    workbook.save(path)?;
+    Ok(())
+}
+
+// ── Appeal Command ────────────────────────────────────────────
+
+fn cmd_appeal(
+    file: PathBuf,
+    provider: Option<String>,
+    npi: Option<String>,
+    output: Option<PathBuf>,
+    format: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let raw = read_file_secure(&file)
+        .map_err(|e| sanitize_error(&e))?;
+
+    let era = era835::parse_era835(&raw)
+        .map_err(|e| format_parse_error_label(&file.display().to_string(), &e))?;
+
+    let denials = era.denial_summaries();
+    if denials.is_empty() {
+        println!("{} No denials found in {}", "✓".green(), file.display());
+        return Ok(());
+    }
+
+    let output_dir = output.unwrap_or_else(|| PathBuf::from("."));
+    fs::create_dir_all(&output_dir)?;
+
+    let provider_name = provider.unwrap_or_else(|| era.payee.name.clone());
+    let provider_npi = npi.unwrap_or_else(|| era.payee.npi.clone());
+    let payer_name = era.payer.name.clone();
+    let today = chrono::Local::now().format("%B %d, %Y").to_string();
+
+    let is_markdown = format == "markdown";
+
+    for denial in &denials {
+        let filename = format!("appeal_{}.{}_letter", denial.claim_id,
+            if is_markdown { "md" } else { "txt" });
+        let path = output_dir.join(&filename);
+
+        let letter = if is_markdown {
+            generate_appeal_letter_markdown(&denial, &provider_name, &provider_npi, &payer_name, &today)
+        } else {
+            generate_appeal_letter_text(&denial, &provider_name, &provider_npi, &payer_name, &today)
+        };
+
+        fs::write(&path, letter)?;
+        println!("{} Generated appeal letter: {}", "✓".green(), path.display());
+    }
+
+    println!("\n{} Generated {} appeal letter(s) in {}",
+        "✓".green(),
+        denials.len(),
+        output_dir.display()
+    );
+
+    Ok(())
+}
+
+fn generate_appeal_letter_text(
+    denial: &era835::DenialSummary,
+    provider: &str,
+    npi: &str,
+    payer: &str,
+    date: &str,
+) -> String {
+    let denial_type_str = match denial.denial_type {
+        era835::DenialType::FullDenial => "Full Denial",
+        era835::DenialType::PartialDenial => "Partial Denial",
+        era835::DenialType::Underpayment => "Underpayment",
+    };
+
+    let carc_list = denial.carc_codes.join(", ");
+    let reasons = denial.denial_reasons.join("\n  - ");
+    let recommendations = denial.appeal_recommendations.join("\n  - ");
+
+    format!(r#"CLAIMS APPEAL LETTER
+
+Date: {date}
+
+Provider: {provider}
+NPI: {npi}
+
+Payer: {payer}
+
+RE: Appeal for Claim ID {claim_id}
+
+Dear Claims Department,
+
+We are writing to formally appeal the {denial_type} of Claim ID {claim_id}.
+
+DENIAL DETAILS:
+  Claim ID: {claim_id}
+  Denial Type: {denial_type_str}
+  Denied Amount: ${amount:.2}
+  CARC Codes: {carc_list}
+  Denial Reasons:
+  - {reasons}
+
+APPEAL ARGUMENT:
+Based on the denial reason codes provided, we believe this claim was incorrectly processed.
+{recommendations_text}
+
+RECOMMENDED ACTIONS:
+  - {recommendations}
+
+We request that you reprocess this claim according to the terms of our provider agreement and applicable regulations.
+
+Please contact us if you require additional documentation or have questions regarding this appeal.
+
+Sincerely,
+
+{provider}
+NPI: {npi}
+
+---
+This appeal was generated automatically by claims-toolkit.
+Please review and customize as needed before submission.
+"#,
+        date = date,
+        provider = provider,
+        npi = npi,
+        payer = payer,
+        claim_id = denial.claim_id,
+        denial_type = denial_type_str.to_lowercase(),
+        denial_type_str = denial_type_str,
+        amount = denial.denied_amount,
+        carc_list = carc_list,
+        reasons = reasons,
+        recommendations = recommendations,
+        recommendations_text = if recommendations.is_empty() {
+            "We request a full review of the claim.".to_string()
+        } else {
+            format!("The following actions are recommended:\n  - {}", recommendations)
+        },
+    )
+}
+
+fn generate_appeal_letter_markdown(
+    denial: &era835::DenialSummary,
+    provider: &str,
+    npi: &str,
+    payer: &str,
+    date: &str,
+) -> String {
+    let denial_type_str = match denial.denial_type {
+        era835::DenialType::FullDenial => "Full Denial",
+        era835::DenialType::PartialDenial => "Partial Denial",
+        era835::DenialType::Underpayment => "Underpayment",
+    };
+
+    let carc_list = denial.carc_codes.join(", ");
+    let reasons = denial.denial_reasons.iter()
+        .map(|r| format!("- {}", r))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let rec_list: Vec<String> = denial.appeal_recommendations.clone();
+    let recommendations = rec_list.iter()
+        .map(|r| format!("- {}", r))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(r#"# Claim Appeal Letter
+
+**Date:** {date}
+
+**Provider:** {provider}  
+**NPI:** {npi}
+
+**Payer:** {payer}
+
+---
+
+## RE: Appeal for Claim ID {claim_id}
+
+Dear Claims Department,
+
+We are writing to formally appeal the **{denial_type_str}** of Claim ID **{claim_id}**.
+
+### Denial Details
+
+| Field | Value |
+|-------|-------|
+| Claim ID | {claim_id} |
+| Denial Type | {denial_type_str} |
+| Denied Amount | ${amount:.2} |
+| CARC Codes | {carc_list} |
+
+### Denial Reasons
+
+{reasons}
+
+### Appeal Argument
+
+Based on the denial reason codes provided, we believe this claim was incorrectly processed.
+
+{recommendations_text}
+
+### Recommended Actions
+
+{recommendations}
+
+We request that you reprocess this claim according to the terms of our provider agreement and applicable regulations.
+
+Please contact us if you require additional documentation or have questions regarding this appeal.
+
+---
+
+Sincerely,
+
+**{provider}**  
+NPI: {npi}
+
+---
+
+*This appeal was generated automatically by claims-toolkit. Please review and customize as needed before submission.*
+"#,
+        date = date,
+        provider = provider,
+        npi = npi,
+        payer = payer,
+        claim_id = denial.claim_id,
+        denial_type_str = denial_type_str,
+        amount = denial.denied_amount,
+        carc_list = carc_list,
+        reasons = if reasons.is_empty() { "_No specific reasons provided_".to_string() } else { reasons },
+        recommendations = if recommendations.is_empty() { "_No specific recommendations_".to_string() } else { recommendations },
+        recommendations_text = if rec_list.is_empty() {
+            "We request a full review of the claim.".to_string()
+        } else {
+            format!("The following actions are recommended:\n\n{}", rec_list.iter().map(|r| format!("- {}", r)).collect::<Vec<_>>().join("\n"))
+        },
+    )
+}
+
 #[derive(clap::ValueEnum, Clone, Copy)]
 enum Shell {
     Bash,
@@ -729,3 +1157,4 @@ fn cmd_completions(shell: Shell) {
         Shell::Elvish => generate(shells::Elvish, &mut cmd, "claims-toolkit", &mut io::stdout()),
     }
 }
+

@@ -1,0 +1,16 @@
+target/
+.git/
+.gitignore
+.github/
+*.md
+!README.md
+!SECURITY.md
+!CHANGELOG.md
+Dockerfile
+docker-compose.yml
+.dockerignore
+.vscode/
+.idea/
+*.log
+*.tmp
+.nyc_output/

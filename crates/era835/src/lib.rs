@@ -558,10 +558,12 @@ fn parse_clp(elements: &[&str]) -> ClaimPayment {
 }
 
 fn parse_cas(elements: &[&str]) -> Vec<Adjustment> {
-    let mut adjustments = Vec::new();
     if elements.len() < 4 {
-        return adjustments;
+        return Vec::new();
     }
+    // CAS segments can have up to 6 reason/amount/quantity triplets = max 6 adjustments
+    let max_adjustments = (elements.len() - 2) / 3;
+    let mut adjustments = Vec::with_capacity(max_adjustments);
     let group = AdjustmentGroup::from_code(elements[1]);
 
     // CAS segments can have up to 6 reason/amount/quantity triplets
@@ -581,6 +583,8 @@ fn parse_cas(elements: &[&str]) -> Vec<Adjustment> {
         }
         i += 3;
     }
+    // Shrink to actual size if significantly over-allocated
+    adjustments.shrink_to_fit();
     adjustments
 }
 
@@ -608,10 +612,12 @@ fn parse_svc(elements: &[&str]) -> ServiceLine {
 }
 
 fn parse_plb(elements: &[&str]) -> Vec<ProviderAdjustment> {
-    let mut adjs = Vec::new();
     if elements.len() < 4 {
-        return adjs;
+        return Vec::new();
     }
+    // Estimate capacity: each adjustment uses 2 elements after header
+    let max_adjs = (elements.len() - 3) / 2;
+    let mut adjs = Vec::with_capacity(max_adjs);
     let provider_id = elements[1].to_string();
     let fiscal_date = elements.get(2).and_then(|s| parse_date(s));
 
@@ -631,6 +637,7 @@ fn parse_plb(elements: &[&str]) -> Vec<ProviderAdjustment> {
         }
         i += 2;
     }
+    adjs.shrink_to_fit();
     adjs
 }
 

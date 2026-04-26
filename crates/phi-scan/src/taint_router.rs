@@ -52,48 +52,65 @@ struct Patterns {
 
 fn patterns() -> &'static Patterns {
     static P: OnceLock<Patterns> = OnceLock::new();
-    P.get_or_init(|| Patterns {
-        name: Regex::new(r"(?i)\b(?:patient|name|pt\.?|dr\.?|doctor|nurse|provider|physician|mr\.?|mrs\.?|ms\.?|miss)\s*[:=]\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b").unwrap(),
-        geographic: Regex::new(r"(?i)\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Circle|Cir))\b|\b(?:ZIP|zip\s*code|postal|address)\s*[:=]?\s*\d{5}(?:-\d{4})?\b").unwrap(),
-        date: Regex::new(r"(?i)\b(?:DOB|date\s+of\s+birth|birth\s+date|admission|discharge|admitted|born)\s*[:=]?\s*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b|\b\d{1,2}[/\-]\d{1,2}[/\-]\d{4}\b").unwrap(),
-        phone: Regex::new(r"\(\d{3}\)\s*\d{3}[-.]\d{4}|\b\d{3}[-.]\d{3}[-.]\d{4}\b").unwrap(),
-        fax: Regex::new(r"(?i)\bfax\s*[:=]?\s*(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b").unwrap(),
-        email: Regex::new(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b").unwrap(),
-        ssn: Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").unwrap(),
-        mrn: Regex::new(r"(?i)\b(?:MRN|medical\s+record|patient\s+id)\s*[:=]?\s*[A-Z0-9]{4,12}\b").unwrap(),
-        health_plan: Regex::new(r"(?i)\b(?:insurance|plan|member|policy)\s*(?:id|number|#)?\s*[:=]?\s*[A-Z0-9\-]{5,20}\b").unwrap(),
-        account_number: Regex::new(r"(?i)\b(?:account|acct|billing)\s*(?:number|#|no\.?)?\s*[:=]?\s*[A-Z0-9\-]{5,20}\b").unwrap(),
-        certificate: Regex::new(r"(?i)\b(?:DEA|certificate|license|permit)\s*(?:number|#|no\.?)?\s*[:=]?\s*[A-Z0-9]{5,12}\b").unwrap(),
-        vehicle_id: Regex::new(r"(?i)\b(?:VIN|vehicle\s+id)\s*[:=]?\s*[A-HJ-NPR-Z0-9]{17}\b").unwrap(),
-        device_id: Regex::new(r"(?i)\b(?:UDI|device\s+id|serial)\s*[:=]?\s*[A-Z0-9\-]{8,20}\b").unwrap(),
-        web_url: Regex::new(r"https?://[^\s<>)\x22']+").unwrap(),
-        ip_address: Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").unwrap(),
-        biometric: Regex::new(r"(?i)\b(?:fingerprint|retinal|iris\s+scan|voiceprint|biometric|face\s*(?:id|recognition)|dna\s+profile|palm\s+print)\b").unwrap(),
-        facial_image: Regex::new(r"(?i)\b(?:photo(?:graph)?|image|picture|portrait|selfie)\s*(?:of|attached|included|showing)\s*(?:patient|resident|individual|person|pt\.?)\b").unwrap(),
-        unique_id: Regex::new(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b").unwrap(),
-        cpt: Regex::new(r"\b(?:CPT|cpt)\s*[-:]?\s*\d{5}\b").unwrap(),
-        icd10: Regex::new(r"\b[A-TV-Z]\d{2,3}(?:\.\d{1,4})?\b").unwrap(),
+    P.get_or_init(|| {
+        // All patterns are static string literals that are validated at compile time.
+        // These expect calls document the invariant that makes them infallible.
+        Patterns {
+            name: Regex::new(r"(?i)\b(?:patient|name|pt\.?|dr\.?|doctor|nurse|provider|physician|mr\.?|mrs\.?|ms\.?|miss)\s*[:=]\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b").expect("static name pattern is valid regex"),
+            geographic: Regex::new(r"(?i)\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*(?:\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Place|Pl|Way|Circle|Cir))\b|\b(?:ZIP|zip\s*code|postal|address)\s*[:=]?\s*\d{5}(?:-\d{4})?\b").expect("static geographic pattern is valid regex"),
+            date: Regex::new(r"(?i)\b(?:DOB|date\s+of\sbirth|birth\s+date|admission|discharge|admitted|born)\s*[:=]?\s*\d{1,2}[/\-]\d{1,2}[/\-]\d{2,4}\b|\b\d{1,2}[/\-]\d{1,2}[/\-]\d{4}\b").expect("static date pattern is valid regex"),
+            phone: Regex::new(r"\(\d{3}\)\s*\d{3}[-.]\d{4}|\b\d{3}[-.]\d{3}[-.]\d{4}\b").expect("static phone pattern is valid regex"),
+            fax: Regex::new(r"(?i)\bfax\s*[:=]?\s*(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}\b").expect("static fax pattern is valid regex"),
+            email: Regex::new(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b").expect("static email pattern is valid regex"),
+            ssn: Regex::new(r"\b\d{3}-\d{2}-\d{4}\b").expect("static ssn pattern is valid regex"),
+            mrn: Regex::new(r"(?i)\b(?:MRN|medical\s+record|patient\s+id)\s*[:=]?\s*[A-Z0-9]{4,12}\b").expect("static mrn pattern is valid regex"),
+            health_plan: Regex::new(r"(?i)\b(?:insurance|plan|member|policy)\s*(?:id|number|#)?\s*[:=]?\s*[A-Z0-9\-]{5,20}\b").expect("static health_plan pattern is valid regex"),
+            account_number: Regex::new(r"(?i)\b(?:account|acct|billing)\s*(?:number|#|no\.?)?\s*[:=]?\s*[A-Z0-9\-]{5,20}\b").expect("static account_number pattern is valid regex"),
+            certificate: Regex::new(r"(?i)\b(?:DEA|certificate|license|permit)\s*(?:number|#|no\.?)?\s*[:=]?\s*[A-Z0-9]{5,12}\b").expect("static certificate pattern is valid regex"),
+            vehicle_id: Regex::new(r"(?i)\b(?:VIN|vehicle\s+id)\s*[:=]?\s*[A-HJ-NPR-Z0-9]{17}\b").expect("static vehicle_id pattern is valid regex"),
+            device_id: Regex::new(r"(?i)\b(?:UDI|device\s+id|serial)\s*[:=]?\s*[A-Z0-9\-]{8,20}\b").expect("static device_id pattern is valid regex"),
+            web_url: Regex::new(r"https?://[^\s<>)\x22']+").expect("static web_url pattern is valid regex"),
+            ip_address: Regex::new(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b").expect("static ip_address pattern is valid regex"),
+            biometric: Regex::new(r"(?i)\b(?:fingerprint|retinal|iris\s+scan|voiceprint|biometric|face\s*(?:id|recognition)|dna\s+profile|palm\s+print)\b").expect("static biometric pattern is valid regex"),
+            facial_image: Regex::new(r"(?i)\b(?:photo(?:graph)?|image|picture|portrait|selfie)\s*(?:of|attached|included|showing)\s*(?:patient|resident|individual|person|pt\.?)\b").expect("static facial_image pattern is valid regex"),
+            unique_id: Regex::new(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b").expect("static unique_id pattern is valid regex"),
+            cpt: Regex::new(r"\b(?:CPT|cpt)\s*[-:]?\s*\d{5}\b").expect("static cpt pattern is valid regex"),
+            icd10: Regex::new(r"\b[A-TV-Z]\d{2,3}(?:\.\d{1,4})?\b").expect("static icd10 pattern is valid regex"),
+        }
     })
+}
+
+/// Case-insensitive check if `text` ends with `suffix`.
+/// Avoids allocating a lowercase string for the entire prefix.
+fn ends_with_ignore_case(text: &str, suffix: &str) -> bool {
+    if text.len() < suffix.len() {
+        return false;
+    }
+    let start = text.len() - suffix.len();
+    text[start..].eq_ignore_ascii_case(suffix)
+}
+
+/// Check if any of the suffixes match (case-insensitive) after trimming whitespace.
+fn ends_with_any_trimmed(text: &str, suffixes: &[&str]) -> bool {
+    let trimmed = text.trim_end();
+    suffixes.iter().any(|&s| ends_with_ignore_case(trimmed, s))
 }
 
 pub fn scan_phi(text: &str) -> PhiScanResult {
     let p = patterns();
     let mut d = Vec::new();
+    // Pre-allocate with estimated capacity based on typical PHI density
+    d.reserve(text.len() / 100);
 
     for m in p.name.find_iter(text) { d.push(PhiDetection { category: PhiCategory::Name, span: (m.start(), m.end()) }); }
     for m in p.geographic.find_iter(text) { d.push(PhiDetection { category: PhiCategory::Geographic, span: (m.start(), m.end()) }); }
     for m in p.date.find_iter(text) { d.push(PhiDetection { category: PhiCategory::Date, span: (m.start(), m.end()) }); }
     for m in p.phone.find_iter(text) {
         let before = &text[..m.start()];
-        let before_lower_owned = before.to_lowercase();
-        let before_lower = before_lower_owned.trim_end();
 
-        // Skip if this is an NPI number (not PHI)
-        if before_lower.ends_with("npi")
-            || before_lower.ends_with("provider")
-            || before_lower.ends_with("national provider")
-            || before_lower.ends_with("provider npi")
-        {
+        // Skip if this is an NPI number (not PHI) — using case-insensitive check without allocation
+        const NPI_PREFIXES: &[&str] = &["npi", "provider", "national provider", "provider npi"];
+        if ends_with_any_trimmed(before, NPI_PREFIXES) {
             continue;
         }
 
@@ -108,7 +125,7 @@ pub fn scan_phi(text: &str) -> PhiScanResult {
             continue;
         }
 
-        let cat = if before_lower.ends_with("fax") {
+        let cat = if ends_with_ignore_case(before.trim_end(), "fax") {
             PhiCategory::Fax
         } else {
             PhiCategory::Phone

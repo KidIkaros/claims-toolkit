@@ -5,6 +5,7 @@ members = [
     "crates/era835-synth",
     "crates/phi-scan",
     "crates/claims-scrub",
+    "crates/claims-837",
     "crates/claims-toolkit-cli",
     "crates/codes",
 ]

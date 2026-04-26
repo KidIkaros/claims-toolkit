@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  claims-toolkit:
+    build: .
+    container_name: claims-toolkit
+    volumes:
+      - ./data:/data:ro
+      - ./output:/output
+    environment:
+      - RUST_LOG=info
+    # Override default to keep container running for exec commands
+    command: tail -f /dev/null
+    stdin_open: true
+    tty: true
+
+  # Development service with hot reload
+  dev:
+    build:
+      context: .
+      target: builder
+    container_name: claims-toolkit-dev
+    volumes:
+      - .:/app
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/app/target
+    working_dir: /app
+    command: cargo watch -x "build --release -p claims-toolkit-cli"
+    environment:
+      - CARGO_TARGET_DIR=/app/target
+
+volumes:
+  cargo-cache:
+  target-cache:

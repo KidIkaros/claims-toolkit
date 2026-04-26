@@ -13,7 +13,9 @@ claims-scrub = { path = "../claims-scrub" }
 clap = { workspace = true }
 colored = { workspace = true }
 serde_json = { workspace = true }
+chrono = { workspace = true }
 clap_complete = "4"
+rust_xlsxwriter = "0.84"
 
 [dev-dependencies]
 serde_json = { workspace = true }
